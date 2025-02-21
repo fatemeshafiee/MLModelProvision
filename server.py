@@ -4,7 +4,7 @@ from typing import Dict
 import uvicorn
 
 # Import your Pydantic models
-from Types import NwdafMLModelProvSubsc
+from types import NwdafMLModelProvSubsc
 
 app = FastAPI()
 
