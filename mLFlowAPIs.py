@@ -6,8 +6,13 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any
 from uuid import uuid4
-
+from types import  *
+from types import NwdafMLModelProvSubsc
+import subprocess
+from fastapi import BackgroundTasks
 app = FastAPI()
+
+
 
 # ToDo (Update this based on k8s)
 MLFLOW_TRACKING_URI = "http://mlflow-container:5000"
@@ -17,41 +22,61 @@ mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 os.makedirs(MLFLOW_ARTIFACT_PATH, exist_ok=True)
 
 
+
 class ModelLogRequest(BaseModel):
+
     model_name: str
-    model_url: HttpUrl  # URL to download the ML model
+    model_url: HttpUrl
+    mLEvent: NwdafEvent
     event_filter: Optional[Dict[str, Any]] = None
     inference_data: Optional[Dict[str, Any]] = None
     target_ue: Optional[Dict[str, Any]] = None
     is_update: bool = False  # Whether this is an update to an existing model
 
 
-def flatten_dict(d, parent_key='', sep='_'):
+def flatten_dict(d_in, parent_key='', sep='_'):
+
     items = []
-    for k, v in d.items():
+    for k, v in d_in.items():
         new_key = f"{parent_key}{sep}{k}" if parent_key else k
+
         if isinstance(v, dict):
             items.extend(flatten_dict(v, new_key, sep=sep).items())
+
         elif isinstance(v, list):
-            items.append((new_key, ','.join(map(str, v))))  # Convert list to comma-separated string
+            # Sort list (convert to string for sorting consistency)
+            sorted_list = sorted(v, key=lambda x: str(x))
+            items.append((new_key, str(sorted_list)))  # Store sorted list as a string
+
         else:
             items.append((new_key, str(v)))
+
     return dict(items)
 
 
-def generate_mlflow_tags(event_filter=None, inference_data=None, target_ue=None):
-    tags = {}
 
+def generate_mlflow_tags(
+    mLEvent: NwdafEvent,
+    event_filter: Optional[Dict[str, Any]] = None,
+    inference_data: Optional[Dict[str, Any]] = None,
+    target_ue: Optional[Dict[str, Any]] = None,
+) -> Dict[str, str]:
+    tags = {"mLEvent": str(mLEvent)}  # Add mLEvent as a tag
     if event_filter:
-        tags.update(flatten_dict(event_filter, "event"))
-
+        tags.update(flatten_dict(event_filter, "eventFilter"))
     if inference_data:
-        tags.update(flatten_dict(inference_data, "inference"))
-
+        tags.update(flatten_dict(inference_data, "inferenceData"))
     if target_ue:
-        tags.update(flatten_dict(target_ue, "ue"))
-
+        tags.update(flatten_dict(target_ue, "targetUe"))
     return tags
+
+def generate_tags_for_model_log_request(request: ModelLogRequest) -> Dict[str, str]:
+    return generate_mlflow_tags(
+        mLEvent=request.mLEvent,
+        event_filter=request.event_filter,
+        inference_data=request.inference_data,
+        target_ue=request.target_ue
+    )
 
 
 def download_model(model_url: str, model_name: str):
@@ -81,7 +106,7 @@ async def log_ml_model(request: ModelLogRequest):
         model_local_path = download_model(model_url, model_name)
 
         # Flatten 3GPP metadata and convert it to MLflow tags
-        tags = generate_mlflow_tags(request.event_filter, request.inference_data, request.target_ue)
+        tags = generate_tags_for_model_log_request(request)
 
         # Start a new MLflow run
         with mlflow.start_run():
@@ -135,22 +160,25 @@ async def get_latest_model(model_name: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/query_models/")
-async def query_models(filters: Dict[str, str]):
-    """
-    Queries MLflow for models based on 3GPP-specific metadata.
-    """
+async def query_models(filters: Dict[str, Any]):
+
     try:
-        query_str = " AND ".join([f"tag.{key}='{value}'" for key, value in filters.items()])
+        flattened_filters = flatten_dict(filters)
+
+        query_str = " AND ".join([f"tag.{key}='{value}'" for key, value in flattened_filters.items()])
+
         client = mlflow.tracking.MlflowClient()
         models = client.search_model_versions(query_str)
 
         results = []
         for model in models:
-            # Check if this model is currently served
             inference_url = None
-            response = requests.get(f"{MLFLOW_TRACKING_URI}/models/{model.name}")
-            if response.status_code == 200:
-                inference_url = f"{MLFLOW_TRACKING_URI}/models/{model.name}/invocations"
+            try:
+                response = requests.get(f"{MLFLOW_TRACKING_URI}/models/{model.name}")
+                if response.status_code == 200:
+                    inference_url = f"{MLFLOW_TRACKING_URI}/models/{model.name}/invocations"
+            except requests.RequestException:
+                pass
 
             results.append({
                 "model_uri": model.source,
@@ -158,10 +186,11 @@ async def query_models(filters: Dict[str, str]):
                 "inference_url": inference_url  # Will be None if not served
             })
 
-        return results
+        return results if results else {"message": "No models match the provided filters."}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.put("/update_model/{model_name}")
