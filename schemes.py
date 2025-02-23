@@ -2,6 +2,7 @@ from enum import Enum
 from pydantic import BaseModel, Field, root_validator, UUID4, HttpUrl
 from typing import Union, Optional, List
 from datetime import datetime
+from pydantic import RootModel
 
 class NfInstanceId(BaseModel):
     nfInstanceId: UUID4
@@ -348,7 +349,7 @@ class EllipsoidArc(BaseModel):
         ge=0, le=100
     )
 
-class GeographicArea(BaseModel):
+class GeographicArea(RootModel):
     root: Union[
         Point,
         PointUncertaintyCircle,
@@ -654,7 +655,7 @@ class HorizontalWithVerticalVelocityAndUncertainty(BaseModel):
         ..., ge=0, le=255
     )
 
-class VelocityEstimate(BaseModel):
+class VelocityEstimate(RootModel):
     root: Union[
         HorizontalVelocity,
         HorizontalWithVerticalVelocity,
