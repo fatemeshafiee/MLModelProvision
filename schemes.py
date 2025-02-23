@@ -349,7 +349,7 @@ class EllipsoidArc(BaseModel):
     )
 
 class GeographicArea(BaseModel):
-    __root__: Union[
+    root: Union[
         Point,
         PointUncertaintyCircle,
         PointUncertaintyEllipse,
@@ -655,7 +655,7 @@ class HorizontalWithVerticalVelocityAndUncertainty(BaseModel):
     )
 
 class VelocityEstimate(BaseModel):
-    __root__: Union[
+    root: Union[
         HorizontalVelocity,
         HorizontalWithVerticalVelocity,
         HorizontalVelocityWithUncertainty,
