@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel, Field, root_validator, UUID4, HttpUrl
+from pydantic import BaseModel, Field, root_validator, field_validator, UUID4, HttpUrl
 from typing import Union, Optional, List
 from datetime import datetime
 from pydantic import RootModel
@@ -398,7 +398,7 @@ class GeoLocation(BaseModel):
     refPoint: Optional[LocalOrigin] = Field(None)
     localCoords: Optional[RelativeCartesianLocation] = Field(None)
 
-    @root_validator
+    @field_validator
     def validate_geo_location(cls, values):
         point = values.get("point")
         pointAlt = values.get("pointAlt")
@@ -457,7 +457,7 @@ class GlobalRanNodeId(BaseModel):
         None, pattern="^(MacroeNB-[A-Fa-f0-9]{5}|LMacroeNB-[A-Fa-f0-9]{6}|SMacroeNB-[A-Fa-f0-9]{5}|HomeeNB-[A-Fa-f0-9]{7})$"
     )
 
-    @root_validator
+    @field_validator
     def validate_one_of_fields(cls, values):
         fields = ["n3IwfId", "gNbId", "ngeNbId", "wagfId", "tngfId", "eNbId"]
         present_fields = [field for field in fields if values.get(field) is not None]
@@ -1195,7 +1195,7 @@ class IpAddr(BaseModel):
         pattern=r"^((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?))(\/.+)$"
     )
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if sum(val is not None for val in values.values()) != 1:
             raise ValueError("Exactly one of 'ipv4Addr', 'ipv6Addr', or 'ipv6Prefix' must be provided.")
@@ -1295,7 +1295,7 @@ class PduSesTrafficReq(BaseModel):
     appId: Optional[str] = None
     domainDescs: Optional[List[str]] = Field(None, min_items=1, description="FQDN(s) or a regular expression used as domain name matching criteria.")
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if sum(1 for v in [values.get("flowDescs"), values.get("appId"), values.get("domainDescs")] if v is not None) != 1:
             raise ValueError("Exactly one of 'flowDescs', 'appId', or 'domainDescs' must be provided.")
@@ -1373,7 +1373,7 @@ class E2eDataVolTransTimeReq(BaseModel):
     dataVolume: Optional[int] = Field(None, ge=0, description="Unsigned integer for data volume.")
     maxNumberUes: Optional[int] = Field(None, ge=0, description="Unsigned integer for the maximum number of UEs.")
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if sum(1 for v in [values.get("repeatDataTrans"), values.get("tsIntervalDataTrans")] if v is not None) != 1:
             raise ValueError("Exactly one of 'repeatDataTrans' or 'tsIntervalDataTrans' must be provided.")
@@ -1478,7 +1478,7 @@ class EventFilter(BaseModel):
     accuReq: Optional[AccuracyReq] = None
     movBehavReqs: Optional[List[MovBehavReq]] = Field(None, min_items=1)
     relProxReqs: Optional[List[RelProxReq]] = Field(None, min_items=1)
-    @root_validator
+    @field_validator
     def validate_not_anySlice_and_snssais(cls, values):
         if values.get("anySlice") is not None and values.get("snssais") is not None:
             raise ValueError("Cannot provide both 'anySlice' and 'snssais' together.")
@@ -1763,7 +1763,7 @@ class DccfEvent(BaseModel):
     gmlcEvent: Optional[EventNotifyDataType] = None
     upfEvent: Optional[UpfEvent] = None
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if sum(1 for v in values.values() if v is not None) != 1:
             raise ValueError("Exactly one of the event fields must be provided.")
@@ -1798,7 +1798,7 @@ class InferenceDataForModelTrain(BaseModel):
     dataSetTag: Optional[DataSetTag] = None
     modelId: Optional[int] = Field(None, ge=0)
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if not any([values.get("adrfId"), values.get("adrfSetId")]):
             raise ValueError("Exactly one of 'adrfId' or 'adrfSetId' must be provided.")
@@ -1823,7 +1823,7 @@ class MLModelAddr(BaseModel):
     mLModelUrl: Optional[HttpUrl] = None
     mlFileFqdn: Optional[str] = None
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if not any([values.get("mLModelUrl"), values.get("mlFileFqdn")]):
             raise ValueError("Exactly one of 'mLModelUrl' or 'mlFileFqdn' must be provided.")
@@ -1834,7 +1834,7 @@ class MLModelAdrf(BaseModel):
     adrfSetId: Optional[str] = None
     storTransId: Optional[str] = None
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if not any([values.get("adrfId"), values.get("adrfSetId")]):
             raise ValueError("Exactly one of 'adrfId' or 'adrfSetId' must be provided.")
@@ -1857,7 +1857,7 @@ class AdditionalMLModelInformation(BaseModel):
     modelMetric: Optional[MLModelMetric] = None
     accMLModel: Optional[int] = Field(None, ge=0)
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if not any([values.get("mLFileAddr"), values.get("mLModelAdrf")]):
             raise ValueError("Exactly one of 'mLFileAddr' or 'mLModelAdrf' must be provided.")
@@ -1875,7 +1875,7 @@ class MLEventNotif(BaseModel):
     addModelInfo: Optional[List[AdditionalMLModelInformation]] = Field(None, min_items=1)
     modelUniqueId: int = Field(..., ge=0)
 
-    @root_validator
+    @field_validator
     def validate_one_of(cls, values):
         if not any([values.get("mLFileAddr"), values.get("mLModelAdrf")]):
             raise ValueError("Exactly one of 'mLFileAddr' or 'mLModelAdrf' must be provided.")
