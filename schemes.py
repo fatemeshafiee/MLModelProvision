@@ -398,17 +398,19 @@ class GeoLocation(BaseModel):
     refPoint: Optional[LocalOrigin] = Field(None)
     localCoords: Optional[RelativeCartesianLocation] = Field(None)
 
-    @field_validator("point", "pointAlt", "refPoint", "localCoords", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def validate_geo_location(cls, _, values):
+    def validate_geo_location(cls, values):
         point = values.get("point")
         pointAlt = values.get("pointAlt")
         refPoint = values.get("refPoint")
         localCoords = values.get("localCoords")
 
+        # ✅ Ensure at least one valid combination exists
         if not any([point, pointAlt, (refPoint and localCoords)]):
             raise ValueError("GeoLocation must include either 'point', 'pointAlt', or both 'refPoint' and 'localCoords'.")
 
+        # ✅ Ensure 'refPoint' and 'localCoords' are provided together
         if (refPoint and not localCoords) or (localCoords and not refPoint):
             raise ValueError("Both 'refPoint' and 'localCoords' must be provided together.")
 
