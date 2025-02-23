@@ -8,7 +8,8 @@ import uuid
 import time
 from schemes import *
 from mLFlowAPIs import *
-app = FastAPI()
+from mLFlowAPIs import app
+
 from fastapi_utils.tasks import repeat_every
 # In-memory storage for subscriptions
 import datetime 
