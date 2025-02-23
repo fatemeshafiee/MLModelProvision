@@ -10,12 +10,15 @@ echo "Starting MLflow server..."
 echo "Backend Store URI: $MLFLOW_BACKEND_STORE_URI"
 echo "Artifact Root: $MLFLOW_DEFAULT_ARTIFACT_ROOT"
 
-# Start MLflow server
-exec mlflow server \
+mlflow server \
     --backend-store-uri "$MLFLOW_BACKEND_STORE_URI" \
     --default-artifact-root "$MLFLOW_DEFAULT_ARTIFACT_ROOT" \
     --host 0.0.0.0 \
-    --port 5000 &
+    --port 5000 \
+    --serve-artifacts \
+    --artifacts-destination "$MLFLOW_ARTIFACT_ROOT" \
+    --registry-store-uri postgresql://mlflow:mlflowpassword@postgresql-svc:5432/mlflowdb \
+    --gunicorn-opts "--log-level debug" &
 
 
 # Wait a bit for MLflow to start

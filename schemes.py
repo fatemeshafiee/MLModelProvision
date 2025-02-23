@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel, Field, root_validator, field_validator, UUID4, HttpUrl
+from pydantic import BaseModel, Field, root_validator, field_validator, model_validator,  UUID4, HttpUrl
 from typing import Union, Optional, List
 from datetime import datetime
 from pydantic import RootModel
@@ -668,7 +668,7 @@ class VelocityEstimate(RootModel):
     ]
 
 class QosRequirement(BaseModel):
-    _5qi: Optional[int] = Field(
+    five_qi: Optional[int] = Field(
         None, ge=0, le=255
     )
 
