@@ -6,22 +6,23 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any
 from uuid import uuid4
-from types import  *
-from types import NwdafMLModelProvSubsc
+from schemes import  *
+from schemes import NwdafMLModelProvSubsc
 import subprocess
 from fastapi import BackgroundTasks
+import time
+
 app = FastAPI()
 
 
 
 # ToDo (Update this based on k8s)
-MLFLOW_TRACKING_URI = "http://mlflow-container:5000"
+MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
 MLFLOW_ARTIFACT_PATH = "/mlflow_artifacts"
+MLFLOW_SERVE_URI = "http://mlflow-svc:5000/models/{model_name}/versions/{model_version}/invocations"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 os.makedirs(MLFLOW_ARTIFACT_PATH, exist_ok=True)
-
-
 
 class ModelLogRequest(BaseModel):
 
@@ -54,6 +55,29 @@ def flatten_dict(d_in, parent_key='', sep='_'):
     return dict(items)
 
 
+def register_existing_model(model_name: str) -> str:
+    client = mlflow.tracking.MlflowClient()
+
+    runs = client.search_runs(experiment_ids=["0"], order_by=["start_time DESC"])
+    if not runs:
+        raise Exception(f"No runs found for model {model_name}")
+
+    latest_run_id = runs[0].info.run_id
+    model_uri = f"runs:/{latest_run_id}/model"
+
+    registered_model = mlflow.register_model(model_uri, model_name)
+
+    time.sleep(5)
+
+    latest_version = client.get_latest_versions(model_name, stages=["None"])[0].version
+
+    client.transition_model_version_stage(
+        name=model_name,
+        version=latest_version,
+        stage="Production"
+    )
+    model_url = MLFLOW_SERVE_URI.format(model_name=model_name, model_version=latest_version)
+    return model_url
 
 def generate_mlflow_tags(
     mLEvent: NwdafEvent,
@@ -95,42 +119,48 @@ def download_model(model_url: str, model_name: str):
 
 @app.post("/log_model/")
 async def log_ml_model(request: ModelLogRequest):
-    """
-    Downloads an ML model, logs it into MLflow, and makes it available for inference.
-    """
     try:
         model_name = request.model_name
         model_url = str(request.model_url)
 
-        # Download and save model
         model_local_path = download_model(model_url, model_name)
 
-        # Flatten 3GPP metadata and convert it to MLflow tags
         tags = generate_tags_for_model_log_request(request)
 
-        # Start a new MLflow run
         with mlflow.start_run():
             mlflow.log_param("original_model_url", model_url)
             mlflow.set_tags(tags)
 
-            # Log model as an MLflow artifact
             mlflow.pyfunc.log_model(artifact_path="model", loader_module="mlflow.sklearn", code_path=None)
 
-            # Register model for serving
             model_uri = f"runs:/{mlflow.active_run().info.run_id}/model"
-            result = mlflow.register_model(model_uri, model_name)
 
-        # Unique Inference URL for this model
-        inference_url = f"{MLFLOW_TRACKING_URI}/models/{model_name}/invocations"
+
+            registered_model = mlflow.register_model(model_uri, model_name)
+
+        time.sleep(5)
+
+        client = mlflow.tracking.MlflowClient()
+        latest_version = client.get_latest_versions(model_name, stages=["None"])[0].version
+
+        client.transition_model_version_stage(
+            name=model_name,
+            version=latest_version,
+            stage="Production"
+        )
+
+        inference_url = f"http://mlflow-container:5001/models/{model_name}/versions/{latest_version}/invocations"
 
         return {
-            "message": f"Model {model_name} logged successfully",
-            "model_uri": result.source,
-            "inference_url": inference_url
+            "message": f"Model {model_name} logged and registered successfully",
+            "model_uri": model_uri,
+            "inference_url": inference_url,
+            "model_version": latest_version
         }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/get_latest_model/{model_name}")
 async def get_latest_model(model_name: str):

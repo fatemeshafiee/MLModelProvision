@@ -4,102 +4,188 @@ from pydantic import BaseModel
 from typing import Dict
 import uvicorn
 import mlflow
-from uuid import uuid4
-
-
-
-# Import your Pydantic models
-from types import NwdafMLModelProvSubsc
-from mLFlowAPIs import generate_mlflow_tags
+import uuid
+import time
+from schemes import *
+from mLFlowAPIs import *
 app = FastAPI()
-
+from fastapi_utils.tasks import repeat_every
 # In-memory storage for subscriptions
 subscriptions: Dict[str, NwdafMLModelProvSubsc] = {}
+last_report_times: Dict[str, datetime.datetime] = {}
 
 API_ROOT = "http://localhost:8000"  # TODO: Change it for k8s.
-MLFLOW_MODEL_SERVE_URL = "http://mlflow-container:5001/invocations"   # TODO: Change it for k8s.
+MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
+MLFLOW_SERVE_URI = "http://mlflow-svc:5000/models/{model_name}/versions/{model_version}/invocations"
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
+def process_scheduled_notifications():
 
-def search_mlflow_model(subscription: NwdafMLModelProvSubsc):
+    global last_report_times
+    current_time = datetime.datetime.utcnow()
 
-    filters = generate_mlflow_tags(subscription)
-    query_str = " AND ".join([f"tag.{key}='{value}'" for key, value in filters.items()])
+    for sub_id, subscription in subscriptions.items():
+        notif_uri = subscription.notifUri
+        notif_correlation_id = subscription.notifCorreId
+        reporting_interval = subscription.eventReq.repPeriod if subscription.eventReq else None
 
-    try:
-        client = mlflow.tracking.MlflowClient()
-        models = client.search_model_versions(query_str)
+        last_report_time = last_report_times.get(sub_id, None)
 
-        return models if models else None
+        if not reporting_interval:
+            continue
 
-    except Exception as e:
-        print(f"MLflow query failed: {e}")
-        return None
+        if last_report_time and (current_time - last_report_time).total_seconds() < reporting_interval:
+            continue
 
+        search_results = search_mlflow_models(subscription.mLEventSubscs)
 
-def serve_ml_model(model_name: str):
+        event_notifs = []
+        for event_sub in subscription.mLEventSubscs:
+            event = event_sub.mLEvent
+            model_info = search_results.get(event)
 
-    try:
-        requests.post(
-            f"{MLFLOW_MODEL_SERVE_URL}/start",
-            json={"model_name": model_name}
+            if model_info and model_info["status"] in ["found", "registered"]:
+                model_url = model_info["mlflow_model_url"]
+                model_version = model_info["model_version"]
+
+                event_notifs.append(MLEventNotif(
+                    event=event,
+                    mLFileAddr=MLModelAddr(mLModelUrl=model_url),
+                    modelUniqueId=int(model_version)
+                ))
+
+        if not event_notifs:
+            continue  # No new models to notify about
+
+        notification_payload = NwdafMLModelProvNotif(
+            eventNotifs=event_notifs,
+            subscriptionId=sub_id
         )
-        return f"{MLFLOW_MODEL_SERVE_URL}"
-    except Exception as e:
-        print(f"Error serving ML model: {e}")
-        return None
+
+        try:
+            response = requests.post(
+                notif_uri, json=notification_payload.dict(), timeout=5
+            )
+
+            if response.status_code == 200:
+                last_report_times[sub_id] = current_time
+                print(f"✅ Notification sent successfully to {notif_uri}")
+            else:
+                print(f"⚠️ Failed to send notification to {notif_uri}, Status Code: {response.status_code}")
+
+        except requests.RequestException as e:
+            print(f"❌ Error sending notification to {notif_uri}: {e}")
+
+def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict[str, Any]:
+    results = {}
+    client = mlflow.tracking.MlflowClient()
+
+    for sub in event_subscriptions:
+        tags = generate_mlflow_tags(
+            mLEvent=sub.mLEvent,
+            event_filter=sub.mLEventFilter,
+            inference_data=sub.inferDataForModel,
+            target_ue=sub.tgtUe
+        )
+
+        query_str = " AND ".join([f"tag.{key}='{value}'" for key, value in tags.items()])
+
+        try:
+            models = client.search_model_versions(query_str)
+
+            if models:
+                latest_model = sorted(models, key=lambda m: int(m.version), reverse=True)[0]
+                results[sub.mLEvent] = {
+                    "status": "found",
+                    "mlflow_model_url": MLFLOW_SERVE_URI.format(
+                        model_name=latest_model.name, model_version=latest_model.version
+                    ),
+                    "model_version": latest_model.version
+                }
+            else:
+                # No registered model found, check for logged models
+                runs = client.search_runs(experiment_ids=["0"], order_by=["start_time DESC"])
+                run_id = None
+
+                for run in runs:
+                    run_tags = run.data.tags
+                    if all(f"tag.{k}" in run_tags and run_tags[f"tag.{k}"] == v for k, v in tags.items()):
+                        run_id = run.info.run_id
+                        break
+
+                if run_id:
+                    model_uri = f"runs:/{run_id}/model"
+                    registered_model = mlflow.register_model(model_uri, str(sub.mLEvent))
+
+                    time.sleep(5)
+
+                    latest_version = client.get_latest_versions(str(sub.mLEvent), stages=["None"])[0].version
+
+                    client.transition_model_version_stage(
+                        name=str(sub.mLEvent),
+                        version=latest_version,
+                        stage="Production"
+                    )
+
+                    results[sub.mLEvent] = {
+                        "status": "registered",
+                        "mlflow_model_url": MLFLOW_SERVE_URI.format(
+                            model_name=str(sub.mLEvent), model_version=latest_version
+                        ),
+                        "model_version": latest_version
+                    }
+                else:
+                    results[sub.mLEvent] = {"status": "not_found"}
+
+        except Exception as e:
+            print(f"MLflow query failed for event {sub.mLEvent}: {e}")
+            results[sub.mLEvent] = {"status": "error", "error_message": str(e)}
+
+    return results
 
 
-@app.post("/subscribe/", status_code=201, response_model=Dict[str, Any])
+@app.post("/subscribe/", status_code=201, response_model=NwdafMLModelProvSubsc)
 async def subscribe(subscription: NwdafMLModelProvSubsc, response: Response):
-
-    matched_models = search_mlflow_model(subscription)
-
-    if not matched_models:
-        raise HTTPException(status_code=503, detail="No matching ML model available in MLflow")
-
-    latest_model = sorted(matched_models, key=lambda m: int(m.version), reverse=True)[0]
-    model_uri = latest_model.source
-    model_name = latest_model.name
-
-    inference_url = serve_ml_model(model_name)
-    if not inference_url:
-        raise HTTPException(status_code=500, detail="Failed to start model serving")
-
-    sub_id = f"sub-{uuid4().hex}"
+    sub_id = f"sub-{uuid.uuid4().hex()}"
     subscriptions[sub_id] = subscription
 
-    location_url = f"{API_ROOT}/nnwdaf-mlmodelprovision/v1/subscriptions/{sub_id}"
+    location_url = f"http://localhost:8000/nnwdaf-mlmodelprovision/v1/subscriptions/{sub_id}"
     response.headers["Location"] = location_url
+
+    fail_event_reports = []
+    ml_event_notifs = []
 
     imm_rep_flag = subscription.eventReq.immRep if subscription.eventReq else False
 
-    response_payload = {
-        "subscriptionId": sub_id,
-        "model_uri": model_uri,
-        "inference_url": inference_url,
-    }
+    search_results = search_mlflow_models(subscription.mLEventSubscs)
 
-    if imm_rep_flag:
-        # 🚀 Generate Immediate Report (Call MLflow Inference)
-        try:
-            inference_response = requests.post(
-                inference_url, json={"inputs": [[1.0, 2.0, 3.0]]}  # Dummy Input Data
-            )
-            if inference_response.status_code == 200:
-                response_payload["immediateReport"] = inference_response.json()
-            else:
-                response_payload["immediateReport"] = {
-                    "status": "failed",
-                    "error": "Inference failed"
-                }
-        except Exception as e:
-            print(f"Error calling MLflow inference: {e}")
-            response_payload["immediateReport"] = {
-                "status": "failed",
-                "error": str(e)
-            }
+    for event_sub in subscription.mLEventSubscs:
+        event = event_sub.mLEvent
+        model_info = search_results.get(event)
 
-    return response_payload
+        if model_info and model_info["status"] in ["found", "registered"]:
+            model_url = model_info["mlflow_model_url"]
+            model_version = model_info["model_version"]
+
+            if imm_rep_flag:
+                ml_event_notifs.append(MLEventNotif(
+                    event=event,
+                    mLFileAddr=MLModelAddr(mLModelUrl=model_url),
+                    modelUniqueId=int(model_version)
+                ))
+                current_time = datetime.datetime.utcnow()
+                last_report_times[sub_id] = current_time
+
+        elif model_info and model_info["status"] == "not_found":
+            fail_event_reports.append(FailureEventInfoForMLModel(
+                event=event,
+                failureCode=FailureCode(failure_code="UNAVAILABLE_ML_MODEL")
+            ))
+
+    subscription.failEventReports = fail_event_reports if fail_event_reports else None
+    subscription.mLEventNotifs = ml_event_notifs if ml_event_notifs else None
+
+    return subscription
 
 @app.put("/nnwdaf-mlmodelprovision/v1/subscriptions/{subscriptionId}", response_model=NwdafMLModelProvSubsc)
 async def update_subscription(subscriptionId: str, updated_subscription: NwdafMLModelProvSubsc):
@@ -119,6 +205,13 @@ async def delete_subscription(subscriptionId: str, response: Response):
 
     response.status_code = 204
     return
+
+
+
+@app.on_event("startup")
+@repeat_every(seconds=1)  # Runs every 1 second
+def scheduled_notification_task():
+    process_scheduled_notifications()
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
