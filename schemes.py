@@ -88,7 +88,7 @@ class Snssai(BaseModel):
 
     sd: Optional[str] = Field(
         None,
-        regex="^[A-Fa-f0-9]{6}$"
+        pattern="^[A-Fa-f0-9]{6}$"
     )
 
 
@@ -98,17 +98,17 @@ class PlmnIdNid(BaseModel):
 
     mcc: str = Field(
         ...,
-        regex="^\\d{3}$"
+        pattern="^\\d{3}$"
     )
 
     mnc: str = Field(
         ...,
-        regex="^\\d{2,3}$"
+        pattern="^\\d{2,3}$"
     )
 
     nid: Optional[str] = Field(
         None,
-        regex="^[A-Fa-f0-9]{11}$"
+        pattern="^[A-Fa-f0-9]{11}$"
     )
 
 class PlmnId(BaseModel):
@@ -116,12 +116,12 @@ class PlmnId(BaseModel):
 
     mcc: str = Field(
         ...,
-        regex="^\\d{3}$"
+        pattern="^\\d{3}$"
     )
 
     mnc: str = Field(
         ...,
-        regex="^\\d{2,3}$"
+        pattern="^\\d{2,3}$"
     )
 
 
@@ -415,45 +415,45 @@ class GeoLocation(BaseModel):
 
 class Ecgi(BaseModel):
     plmnId: PlmnId = Field(...)
-    eutraCellId: str = Field(..., regex="^[A-Fa-f0-9]{7}$")
-    nid: Optional[str] = Field(None, regex="^[A-Fa-f0-9]{11}$")
+    eutraCellId: str = Field(..., pattern="^[A-Fa-f0-9]{7}$")
+    nid: Optional[str] = Field(None, pattern="^[A-Fa-f0-9]{11}$")
 
 class Ncgi(BaseModel):
     plmnId: PlmnId = Field(...)
-    nrCellId: str = Field(..., regex="^[A-Fa-f0-9]{9}$")
-    nid: Optional[str] = Field(None, regex="^[A-Fa-f0-9]{11}$")
+    nrCellId: str = Field(..., pattern="^[A-Fa-f0-9]{9}$")
+    nid: Optional[str] = Field(None, pattern="^[A-Fa-f0-9]{11}$")
 
 class GNbId(BaseModel):
     bitLength: int = Field(..., ge=22, le=32)
-    gNBValue: str = Field(..., regex="^[A-Fa-f0-9]{6,8}$")
+    gNBValue: str = Field(..., pattern="^[A-Fa-f0-9]{6,8}$")
 
 class GlobalRanNodeId(BaseModel):
     plmnId: PlmnId = Field(...)
 
     n3IwfId: Optional[str] = Field(
-        None, regex="^[A-Fa-f0-9]+$"
+        None, pattern="^[A-Fa-f0-9]+$"
     )
 
     gNbId: Optional[GNbId] = None
 
     ngeNbId: Optional[str] = Field(
-        None, regex="^(MacroNGeNB-[A-Fa-f0-9]{5}|LMacroNGeNB-[A-Fa-f0-9]{6}|SMacroNGeNB-[A-Fa-f0-9]{5})$"
+        None, pattern="^(MacroNGeNB-[A-Fa-f0-9]{5}|LMacroNGeNB-[A-Fa-f0-9]{6}|SMacroNGeNB-[A-Fa-f0-9]{5})$"
     )
 
     wagfId: Optional[str] = Field(
-        None, regex="^[A-Fa-f0-9]+$"
+        None, pattern="^[A-Fa-f0-9]+$"
     )
 
     tngfId: Optional[str] = Field(
-        None, regex="^[A-Fa-f0-9]+$"
+        None, pattern="^[A-Fa-f0-9]+$"
     )
 
     nid: Optional[str] = Field(
-        None, regex="^[A-Fa-f0-9]{11}$"
+        None, pattern="^[A-Fa-f0-9]{11}$"
     )
 
     eNbId: Optional[str] = Field(
-        None, regex="^(MacroeNB-[A-Fa-f0-9]{5}|LMacroeNB-[A-Fa-f0-9]{6}|SMacroeNB-[A-Fa-f0-9]{5}|HomeeNB-[A-Fa-f0-9]{7})$"
+        None, pattern="^(MacroeNB-[A-Fa-f0-9]{5}|LMacroeNB-[A-Fa-f0-9]{6}|SMacroeNB-[A-Fa-f0-9]{5}|HomeeNB-[A-Fa-f0-9]{7})$"
     )
 
     @root_validator
@@ -469,8 +469,8 @@ class GlobalRanNodeId(BaseModel):
 
 class Tai(BaseModel):
     plmnId: PlmnId = Field(...)
-    tac: str = Field(..., regex="(^[A-Fa-f0-9]{4}$)|(^[A-Fa-f0-9]{6}$)")
-    nid: Optional[str] = Field(None, regex="^[A-Fa-f0-9]{11}$")
+    tac: str = Field(..., pattern="(^[A-Fa-f0-9]{4}$)|(^[A-Fa-f0-9]{6}$)")
+    nid: Optional[str] = Field(None, pattern="^[A-Fa-f0-9]{11}$")
 
 
 class NetworkAreaInfo(BaseModel):
@@ -668,11 +668,11 @@ class QosRequirement(BaseModel):
     )
 
     gfbrUl: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
     gfbrDl: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
     resType: Optional[QosResourceTypeEnum] = None
@@ -682,7 +682,7 @@ class QosRequirement(BaseModel):
     )
 
     per: Optional[str] = Field(
-        None, regex=r"^([0-9]E-[0-9])$"
+        None, pattern=r"^([0-9]E-[0-9])$"
     )
 
     deviceSpeed: Optional[VelocityEstimate] = None
@@ -785,19 +785,19 @@ class BwRequirement(BaseModel):
     )
 
     marBwDl: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
     marBwUl: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
     mirBwDl: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
     mirBwUl: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
 class ExceptionIdEnum(str, Enum):
@@ -841,11 +841,11 @@ class ScheduledCommunicationTime(BaseModel):
     )
 
     timeOfDayStart: Optional[str] = Field(
-        None, regex=r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-][01]\d:[0-5]\d)?$"
+        None, pattern=r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-][01]\d:[0-5]\d)?$"
     )
 
     timeOfDayEnd: Optional[str] = Field(
-        None, regex=r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-][01]\d:[0-5]\d)?$"
+        None, pattern=r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-][01]\d:[0-5]\d)?$"
     )
 
 class ScheduledCommunicationTypeEnum(str, Enum):
@@ -861,7 +861,7 @@ class ScheduledCommunicationType(BaseModel):
 class UmtTime(BaseModel):
     timeOfDay: str = Field(
         ...,
-        regex=r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-][01]\d:[0-5]\d)?$"
+        pattern=r"^([01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:Z|[+-][01]\d:[0-5]\d)?$"
     )
 
     dayOfWeek: int = Field(
@@ -915,10 +915,10 @@ class ExpectedUeBehaviourData(BaseModel):
     batteryIndication: Optional[BatteryIndication] = None
     validityTime: Optional[datetime] = None
     confidenceLevel: Optional[str] = Field(
-        None, regex=r"^[0]\.[0-9]{2}$|^1\.00$", description="A floating value between 0.00 and 1.00."
+        None, pattern=r"^[0]\.[0-9]{2}$|^1\.00$", description="A floating value between 0.00 and 1.00."
     )
     accuracyLevel: Optional[str] = Field(
-        None, regex=r"^[0]\.[0-9]{2}$|^1\.00$", description="A floating value between 0.00 and 1.00."
+        None, pattern=r"^[0]\.[0-9]{2}$|^1\.00$", description="A floating value between 0.00 and 1.00."
     )
 
 class RatTypeEnum(str, Enum):
@@ -970,16 +970,16 @@ class ThresholdLevel(BaseModel):
     nfStorageUsage: Optional[int] = None
 
     avgTrafficRate: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
     maxTrafficRate: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
     minTrafficRate: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
     aggTrafficRate: Optional[str] = Field(
-        None, regex=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
+        None, pattern=r"^\d+(\.\d+)? (bps|Kbps|Mbps|Gbps|Tbps)$"
     )
 
     varTrafficRate: Optional[float] = None
@@ -1181,17 +1181,17 @@ class AnalyticsSubset(BaseModel):
 class IpAddr(BaseModel):
     ipv4Addr: Optional[str] = Field(
         None,
-        regex=r"^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$"
+        pattern=r"^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$"
     )
 
     ipv6Addr: Optional[str] = Field(
         None,
-        regex=r"^((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?))$"
+        pattern=r"^((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?))$"
     )
 
     ipv6Prefix: Optional[str] = Field(
         None,
-        regex=r"^((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?))(\/.+)$"
+        pattern=r"^((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?))(\/.+)$"
     )
 
     @root_validator
@@ -1490,19 +1490,19 @@ class TargetUeInformation(BaseModel):
     supis: Optional[List[str]] = Field(
         None,
         min_items=1,
-        regex=r"^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
+        pattern=r"^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
     )
 
     gpsis: Optional[List[str]] = Field(
         None,
         min_items=1,
-        regex=r"^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
+        pattern=r"^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
     )
 
     intGroupIds: Optional[List[str]] = Field(
         None,
         min_items=1,
-        regex=r"^[A-Fa-f0-9]{8}-[0-9]{3}-[0-9]{2,3}-([A-Fa-f0-9][A-Fa-f0-9]){1,10}$"
+        pattern=r"^[A-Fa-f0-9]{8}-[0-9]{3}-[0-9]{2,3}-([A-Fa-f0-9][A-Fa-f0-9]){1,10}$"
     )
 
 
@@ -1812,7 +1812,7 @@ class MLEventSubscription(BaseModel):
     timeModelNeeded: Optional[datetime] = None
     mlEvRepCon: Optional[MLRepEventCondition] = None
     modelInterInfo: Optional[str] = None
-    nfConsumerInfo: Optional[str] = Field(None, regex=r"^[0-9]{6}$")
+    nfConsumerInfo: Optional[str] = Field(None, pattern=r"^[0-9]{6}$")
     modelProvExt: Optional[ModelProvisionParamsExt] = None
     useCaseCxt: Optional[str] = None
     inferDataForModel: Optional[InferenceDataForModelTrain] = None
@@ -1958,7 +1958,7 @@ class NwdafMLModelProvSubsc(BaseModel):
     mLEventSubscs: List[MLEventSubscription] = Field(..., min_items=1)
     notifUri: HttpUrl
     mLEventNotifs: Optional[List[MLEventNotif]] = Field(None, min_items=1)
-    suppFeats: Optional[str] = Field(None, regex=r"^[A-Fa-f0-9]*$")
+    suppFeats: Optional[str] = Field(None, pattern=r"^[A-Fa-f0-9]*$")
     notifCorreId: Optional[str] = None
     eventReq: Optional[ReportingInformation] = None
     failEventReports: Optional[List[FailureEventInfoForMLModel]] = Field(None, min_items=1)
