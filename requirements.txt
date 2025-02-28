@@ -54,7 +54,7 @@ pytz==2025.1
 PyYAML==6.0.2
 requests==2.32.3
 rsa==4.9
-scikit-learn==1.6.1
+scikit-learn==1.6.0
 scipy==1.13.1
 six==1.17.0
 smmap==5.0.2

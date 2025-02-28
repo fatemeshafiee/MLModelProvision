@@ -22,7 +22,7 @@ mlflow server \
 
 
 # Wait a bit for MLflow to start
-sleep 5
+sleep 5 
 
 echo "Starting FastAPI server..."
 exec uvicorn server:app --host 0.0.0.0 --port 8000 --workers 2

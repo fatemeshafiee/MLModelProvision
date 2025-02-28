@@ -11,15 +11,20 @@ from schemes import NwdafMLModelProvSubsc
 import subprocess
 from fastapi import BackgroundTasks
 import time
+import mlflow.sklearn  
+import pickle
+import joblib
 
+import time
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 app = FastAPI()
-
 
 
 # ToDo (Update this based on k8s)
 MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
 MLFLOW_ARTIFACT_PATH = "/mlflow_artifacts"
-MLFLOW_SERVE_URI = "http://mlflow-svc:5000/models/{model_name}/versions/{model_version}/invocations"
+MLFLOW_SERVE_URI = "http://mlflow-svc:5001/models/{model_name}/versions/{model_version}/invocations"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 os.makedirs(MLFLOW_ARTIFACT_PATH, exist_ok=True)
@@ -102,11 +107,13 @@ def generate_tags_for_model_log_request(request: ModelLogRequest) -> Dict[str, s
         target_ue=request.target_ue
     )
 
+MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
+MLFLOW_ARTIFACT_PATH = "/mlflow_artifacts"
+MLFLOW_SERVE_URI = "http://mlflow-svc:5001/models/{model_name}/versions/{model_version}/invocations"
+mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 def download_model(model_url: str, model_name: str):
-
     local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid4().hex}.pkl")
-
     response = requests.get(model_url, stream=True)
     if response.status_code == 200:
         with open(local_path, "wb") as file:
@@ -116,51 +123,72 @@ def download_model(model_url: str, model_name: str):
     else:
         raise HTTPException(status_code=400, detail="Failed to download model from URL")
 
-
 @app.post("/log_model/")
 async def log_ml_model(request: ModelLogRequest):
     try:
         model_name = request.model_name
-        model_url = str(request.model_url)
-
-        model_local_path = download_model(model_url, model_name)
-
         tags = generate_tags_for_model_log_request(request)
 
+        model_local_path = download_model(request.model_url, model_name)
+        loaded_model = joblib.load(model_local_path)
+        if not hasattr(loaded_model, "predict"):
+            raise HTTPException(status_code=500, detail="❌ Model does not have a `predict()` method!")
+        
+        
+        artifact_path = f"models/{model_name}"
+        
         with mlflow.start_run():
-            mlflow.log_param("original_model_url", model_url)
+            mlflow.log_param("original_model_url", request.model_url)
+            # Log the model using MLflow's sklearn flavor; this creates the MLmodel file
             mlflow.set_tags(tags)
+            mlflow.sklearn.log_model(
+                sk_model=loaded_model,
+                artifact_path=artifact_path,
+                serialization_format="cloudpickle"
+            )
+            run_id = mlflow.active_run().info.run_id
 
-            mlflow.pyfunc.log_model(artifact_path="model", loader_module="mlflow.sklearn", code_path=None)
-
-            model_uri = f"runs:/{mlflow.active_run().info.run_id}/model"
-
-
+            model_uri = f"runs:/{run_id}/{artifact_path}"
+            client = mlflow.tracking.MlflowClient()
             registered_model = mlflow.register_model(model_uri, model_name)
-
+            for tag_key, tag_value in tags.items():
+                client.set_registered_model_tag(model_name, tag_key, tag_value)
+        
         time.sleep(5)
-
-        client = mlflow.tracking.MlflowClient()
+        
         latest_version = client.get_latest_versions(model_name, stages=["None"])[0].version
-
         client.transition_model_version_stage(
             name=model_name,
             version=latest_version,
             stage="Production"
         )
-
-        inference_url = f"http://mlflow-container:5001/models/{model_name}/versions/{latest_version}/invocations"
-
+        
+        # ★ Verify that the MLmodel file exists at the expected location.
+        # This should be at: /mlflow_artifacts/0/<run_id>/artifacts/models/<model_name>/MLmodel
+        mlmodel_path = os.path.join(MLFLOW_ARTIFACT_PATH, "0", run_id, "artifacts", artifact_path, "MLmodel")
+        if not os.path.exists(mlmodel_path):
+            raise HTTPException(status_code=500, detail=f"❌ MLmodel file missing at {mlmodel_path}")
+        
+        # Serve the model using the standard serving URI (models:/{model_name}/{latest_version})
+        subprocess.Popen([
+            "mlflow", "models", "serve",
+            "--model-uri", f"models:/{model_name}/{latest_version}",
+            "--host", "0.0.0.0",
+            "--port", "5001",
+            "--no-conda"
+        ])
+        
+        inference_url = MLFLOW_SERVE_URI.format(model_name=model_name, model_version=latest_version)
+        
         return {
-            "message": f"Model {model_name} logged and registered successfully",
+            "message": f"✅ Model {model_name} logged, registered, and served successfully!",
             "model_uri": model_uri,
             "inference_url": inference_url,
             "model_version": latest_version
         }
-
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.get("/get_latest_model/{model_name}")
 async def get_latest_model(model_name: str):
