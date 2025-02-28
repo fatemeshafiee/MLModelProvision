@@ -140,7 +140,7 @@ async def log_ml_model(request: ModelLogRequest):
         with mlflow.start_run():
             mlflow.log_param("original_model_url", request.model_url)
             # Log the model using MLflow's sklearn flavor; this creates the MLmodel file
-            mlflow.set_tags(tags)
+            # mlflow.set_tags(tags)
             mlflow.sklearn.log_model(
                 sk_model=loaded_model,
                 artifact_path=artifact_path,
