@@ -5,7 +5,7 @@ import mlflow.pyfunc
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any
-from uuid import uuid4
+import uuid
 from schemes import  *
 from schemes import NwdafMLModelProvSubsc
 import subprocess
@@ -113,7 +113,7 @@ MLFLOW_SERVE_URI = "http://mlflow-svc:5001/models/{model_name}/versions/{model_v
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 def download_model(model_url: str, model_name: str):
-    local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid4().hex}.pkl")
+    local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid.uuid4().hex()}.pkl")
     response = requests.get(model_url, stream=True)
     if response.status_code == 200:
         with open(local_path, "wb") as file:
