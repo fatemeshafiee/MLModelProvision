@@ -24,7 +24,7 @@ COPY . /app
 
 RUN chmod +x /app/entrypoint.sh
 
-# Expose both MLflow (5000) and FastAPI (8000)
+# Expose for MLflow (5000, 5001) and FastAPI (8000)
 EXPOSE 5000 8000 5001
 
 # Start script with shell execution

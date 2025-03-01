@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Dict
 import uvicorn
 import mlflow
-import uuid
+from uuid import uuid4
 import time
 from schemes import *
 from mLFlowAPIs import *
@@ -90,8 +90,15 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
             target_ue=sub.tgtUe
         )
 
-        query_str = " AND ".join([f"tag.{key}='{value}'" for key, value in tags.items()])
-
+        query_str = ""
+        query_parts = []
+        for key, value in tags.items():
+            if value is not None and str(value) != "None":
+                cleaned_value = str(value).replace("'", "")
+                query_parts.append(f"tag.{key}='{cleaned_value}'")
+        query_str = " AND ".join(query_parts)
+        logger.info("the query_str is %s", query_str)
+        
         try:
             models = client.search_model_versions(query_str)
 
@@ -148,7 +155,7 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
 
 @app.post("/subscribe/", status_code=201, response_model=NwdafMLModelProvSubsc)
 async def subscribe(subscription: NwdafMLModelProvSubsc, response: Response):
-    sub_id = f"sub-{uuid.uuid4().hex()}"
+    sub_id = f"sub-{uuid4().hex}"
     subscriptions[sub_id] = subscription
 
     location_url = f"http://localhost:8000/nnwdaf-mlmodelprovision/v1/subscriptions/{sub_id}"

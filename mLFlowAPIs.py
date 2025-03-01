@@ -5,28 +5,35 @@ import mlflow.pyfunc
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, Dict, Any
-import uuid
+from uuid import uuid4
 from schemes import  *
-from schemes import NwdafMLModelProvSubsc
 import subprocess
 from fastapi import BackgroundTasks
 import time
 import mlflow.sklearn  
 import pickle
 import joblib
+import logging
+import sys
 
 import time
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 app = FastAPI()
+logging.basicConfig(
+    level=logging.INFO,  # Set to INFO (or DEBUG for more verbosity)
+    stream=sys.stdout,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 
+logger = logging.getLogger(__name__)
+logger.info("Logging configured to output to stdout.")
 
 # ToDo (Update this based on k8s)
 MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
 MLFLOW_ARTIFACT_PATH = "/mlflow_artifacts"
 MLFLOW_SERVE_URI = "http://mlflow-svc:5001/models/{model_name}/versions/{model_version}/invocations"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
-
 os.makedirs(MLFLOW_ARTIFACT_PATH, exist_ok=True)
 
 class ModelLogRequest(BaseModel):
@@ -41,22 +48,18 @@ class ModelLogRequest(BaseModel):
 
 
 def flatten_dict(d_in, parent_key='', sep='_'):
-
     items = []
     for k, v in d_in.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        key_str = str(k)
+        new_key = f"{parent_key}{sep}{key_str}" if parent_key else key_str
 
         if isinstance(v, dict):
             items.extend(flatten_dict(v, new_key, sep=sep).items())
-
         elif isinstance(v, list):
-            # Sort list (convert to string for sorting consistency)
             sorted_list = sorted(v, key=lambda x: str(x))
-            items.append((new_key, str(sorted_list)))  # Store sorted list as a string
-
+            items.append((new_key, str(sorted_list)))  
         else:
             items.append((new_key, str(v)))
-
     return dict(items)
 
 
@@ -84,20 +87,59 @@ def register_existing_model(model_name: str) -> str:
     model_url = MLFLOW_SERVE_URI.format(model_name=model_name, model_version=latest_version)
     return model_url
 
+# def generate_mlflow_tags(
+#     mLEvent: NwdafEvent,
+#     event_filter: Optional[Dict[str, Any]] = None,
+#     inference_data: Optional[Dict[str, Any]] = None,
+#     target_ue: Optional[Dict[str, Any]] = None,
+# ) -> Dict[str, str]:
+#     tags = {"mLEvent": str(mLEvent)}  # Add mLEvent as a tag
+#     if event_filter:
+#         if len(event_filter)!=0:
+#             tags.update(flatten_dict(event_filter, "eventFilter"))
+#     if inference_data:
+#         tags.update(flatten_dict(inference_data, "inferenceData"))
+#     if target_ue:
+#         tags.update(flatten_dict(target_ue, "targetUe"))
+#     return tags
+
 def generate_mlflow_tags(
     mLEvent: NwdafEvent,
-    event_filter: Optional[Dict[str, Any]] = None,
-    inference_data: Optional[Dict[str, Any]] = None,
-    target_ue: Optional[Dict[str, Any]] = None,
+    event_filter: Optional[Any] = None,
+    inference_data: Optional[Any] = None,
+    target_ue: Optional[Any] = None,
 ) -> Dict[str, str]:
     tags = {"mLEvent": str(mLEvent)}  # Add mLEvent as a tag
+
     if event_filter:
-        tags.update(flatten_dict(event_filter, "eventFilter"))
+        if isinstance(event_filter, dict):
+            if event_filter:  # non-empty dict
+                tags.update(flatten_dict(event_filter, "eventFilter"))
+        else:
+            event_filter_dict = vars(event_filter)
+            if event_filter_dict:  # non-empty dict from object's attributes
+                tags.update(flatten_dict(event_filter_dict, "eventFilter"))
+
     if inference_data:
-        tags.update(flatten_dict(inference_data, "inferenceData"))
+        if isinstance(inference_data, dict):
+            if inference_data:
+                tags.update(flatten_dict(inference_data, "inferenceData"))
+        else:
+            inference_data_dict = vars(inference_data)
+            if inference_data_dict:
+                tags.update(flatten_dict(inference_data_dict, "inferenceData"))
+
     if target_ue:
-        tags.update(flatten_dict(target_ue, "targetUe"))
+        if isinstance(target_ue, dict):
+            if target_ue:
+                tags.update(flatten_dict(target_ue, "targetUe"))
+        else:
+            target_ue_dict = vars(target_ue)
+            if target_ue_dict:
+                tags.update(flatten_dict(target_ue_dict, "targetUe"))
+
     return tags
+
 
 def generate_tags_for_model_log_request(request: ModelLogRequest) -> Dict[str, str]:
     return generate_mlflow_tags(
@@ -107,14 +149,13 @@ def generate_tags_for_model_log_request(request: ModelLogRequest) -> Dict[str, s
         target_ue=request.target_ue
     )
 
-MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
-MLFLOW_ARTIFACT_PATH = "/mlflow_artifacts"
-MLFLOW_SERVE_URI = "http://mlflow-svc:5001/models/{model_name}/versions/{model_version}/invocations"
-mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 def download_model(model_url: str, model_name: str):
-    local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid.uuid4().hex()}.pkl")
+    logger.info("In the download_model")
+    local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid4().hex}.pkl")
+    logger.info("os.path.join")
     response = requests.get(model_url, stream=True)
+    logger.info("response = requests.get(model_url, stream=True)")
     if response.status_code == 200:
         with open(local_path, "wb") as file:
             for chunk in response.iter_content(chunk_size=8192):
@@ -126,10 +167,13 @@ def download_model(model_url: str, model_name: str):
 @app.post("/log_model/")
 async def log_ml_model(request: ModelLogRequest):
     try:
+        logger.info("In the try section")
         model_name = request.model_name
         tags = generate_tags_for_model_log_request(request)
+        logger.info("try generating tags")
 
         model_local_path = download_model(request.model_url, model_name)
+        logger.info("Downloaded the model")
         loaded_model = joblib.load(model_local_path)
         if not hasattr(loaded_model, "predict"):
             raise HTTPException(status_code=500, detail="❌ Model does not have a `predict()` method!")
@@ -146,13 +190,17 @@ async def log_ml_model(request: ModelLogRequest):
                 artifact_path=artifact_path,
                 serialization_format="cloudpickle"
             )
+            logger.info("mlflow.sklearn.log_model")
             run_id = mlflow.active_run().info.run_id
 
             model_uri = f"runs:/{run_id}/{artifact_path}"
             client = mlflow.tracking.MlflowClient()
+            logger.info("mlflow.tracking.MlflowClient()")
             registered_model = mlflow.register_model(model_uri, model_name)
+            logger.info("mlflow.register_model(model_uri, model_name)")
             for tag_key, tag_value in tags.items():
                 client.set_registered_model_tag(model_name, tag_key, tag_value)
+            logger.info("set_registered_model_tag")
         
         time.sleep(5)
         

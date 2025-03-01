@@ -77,6 +77,8 @@ class NwdafEvent(BaseModel):
         ...,
         description="Enum for known NWDAF events, or a custom string for future extensions."
     )
+    def __str__(self):
+        return str(self.event)
 
 
 class Snssai(BaseModel):
