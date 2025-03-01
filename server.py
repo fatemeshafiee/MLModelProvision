@@ -174,7 +174,7 @@ async def subscribe(subscription: NwdafMLModelProvSubsc, response: Response):
 
     for event_sub in subscription.mLEventSubscs:
         event = event_sub.mLEvent
-        model_info = search_results.get(event)
+        model_info = search_results.get(str(event))
         logger.info("in the loop line 178")
         if model_info and model_info["status"] in ["found", "registered"]:
             model_url = model_info["mlflow_model_url"]
