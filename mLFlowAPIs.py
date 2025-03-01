@@ -48,6 +48,7 @@ class ModelLogRequest(BaseModel):
 
 
 def flatten_dict(d_in, parent_key='', sep='_'):
+
     items = []
     for k, v in d_in.items():
         key_str = str(k)
@@ -57,10 +58,20 @@ def flatten_dict(d_in, parent_key='', sep='_'):
             items.extend(flatten_dict(v, new_key, sep=sep).items())
         elif isinstance(v, list):
             sorted_list = sorted(v, key=lambda x: str(x))
-            items.append((new_key, str(sorted_list)))  
+            items.append((new_key, str(sorted_list)))
         else:
             items.append((new_key, str(v)))
     return dict(items)
+
+def safe_flatten(param: Optional[Any], prefix: str) -> Dict[str, str]:
+    if not param:
+        return {}
+
+    if not isinstance(param, dict):
+        param = vars(param)
+    
+    flattened = flatten_dict(param, prefix)
+    return {str(k): str(v) for k, v in flattened.items() if v is not None and str(v) != "None"}
 
 
 def register_existing_model(model_name: str) -> str:
@@ -109,37 +120,14 @@ def generate_mlflow_tags(
     inference_data: Optional[Any] = None,
     target_ue: Optional[Any] = None,
 ) -> Dict[str, str]:
-    tags = {"mLEvent": str(mLEvent)}  # Add mLEvent as a tag
+    tags = {"mLEvent": str(mLEvent)}
 
-    if event_filter:
-        if isinstance(event_filter, dict):
-            if event_filter:  # non-empty dict
-                tags.update(flatten_dict(event_filter, "eventFilter"))
-        else:
-            event_filter_dict = vars(event_filter)
-            if event_filter_dict:  # non-empty dict from object's attributes
-                tags.update(flatten_dict(event_filter_dict, "eventFilter"))
-
-    if inference_data:
-        if isinstance(inference_data, dict):
-            if inference_data:
-                tags.update(flatten_dict(inference_data, "inferenceData"))
-        else:
-            inference_data_dict = vars(inference_data)
-            if inference_data_dict:
-                tags.update(flatten_dict(inference_data_dict, "inferenceData"))
-
-    if target_ue:
-        if isinstance(target_ue, dict):
-            if target_ue:
-                tags.update(flatten_dict(target_ue, "targetUe"))
-        else:
-            target_ue_dict = vars(target_ue)
-            if target_ue_dict:
-                tags.update(flatten_dict(target_ue_dict, "targetUe"))
+    # Merge in flattened tags from optional filters
+    tags.update(safe_flatten(event_filter, "eventFilter"))
+    tags.update(safe_flatten(inference_data, "inferenceData"))
+    tags.update(safe_flatten(target_ue, "targetUe"))
 
     return tags
-
 
 def generate_tags_for_model_log_request(request: ModelLogRequest) -> Dict[str, str]:
     return generate_mlflow_tags(
