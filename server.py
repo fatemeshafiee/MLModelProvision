@@ -92,19 +92,22 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
 
         query_str = ""
         query_parts = []
+        for tag_key, tag_value in tags.items():
+            logger.info("Tag key: %s (type: %s), Tag value: %s (type: %s)",
+                tag_key, type(tag_key), tag_value, type(tag_value))
         for key, value in tags.items():
             if value is not None and str(value) != "None":
                 cleaned_value = str(value).replace("'", "")
                 query_parts.append(f"tag.{key}='{cleaned_value}'")
         query_str = " AND ".join(query_parts)
         logger.info("the query_str is %s", query_str)
-        
+
         try:
             models = client.search_model_versions(query_str)
 
             if models:
                 latest_model = sorted(models, key=lambda m: int(m.version), reverse=True)[0]
-                results[sub.mLEvent] = {
+                results[str(sub.mLEvent)] = {
                     "status": "found",
                     "mlflow_model_url": MLFLOW_SERVE_URI.format(
                         model_name=latest_model.name, model_version=latest_model.version
@@ -136,7 +139,7 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
                         stage="Production"
                     )
 
-                    results[sub.mLEvent] = {
+                    results[str(sub.mLEvent)] = {
                         "status": "registered",
                         "mlflow_model_url": MLFLOW_SERVE_URI.format(
                             model_name=str(sub.mLEvent), model_version=latest_version
@@ -144,7 +147,7 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
                         "model_version": latest_version
                     }
                 else:
-                    results[sub.mLEvent] = {"status": "not_found"}
+                    results[str(sub.mLEvent)] = {"status": "not_found"}
 
         except Exception as e:
             print(f"MLflow query failed for event {sub.mLEvent}: {e}")
@@ -167,15 +170,16 @@ async def subscribe(subscription: NwdafMLModelProvSubsc, response: Response):
     imm_rep_flag = subscription.eventReq.immRep if subscription.eventReq else False
 
     search_results = search_mlflow_models(subscription.mLEventSubscs)
+    logger.info("having the search_results")
 
     for event_sub in subscription.mLEventSubscs:
         event = event_sub.mLEvent
         model_info = search_results.get(event)
-
+        logger.info("in the loop line 178")
         if model_info and model_info["status"] in ["found", "registered"]:
             model_url = model_info["mlflow_model_url"]
             model_version = model_info["model_version"]
-
+            logger.info("notif is created")
             if imm_rep_flag:
                 ml_event_notifs.append(MLEventNotif(
                     event=event,

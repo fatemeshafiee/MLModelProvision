@@ -185,7 +185,10 @@ async def log_ml_model(request: ModelLogRequest):
             client = mlflow.tracking.MlflowClient()
             logger.info("mlflow.tracking.MlflowClient()")
             registered_model = mlflow.register_model(model_uri, model_name)
-            logger.info("mlflow.register_model(model_uri, model_name)")
+            logger.info("logging the generated tags and their type")
+            for tag_key, tag_value in tags.items():
+                logger.info("Tag key: %s (type: %s), Tag value: %s (type: %s)",
+                tag_key, type(tag_key), tag_value, type(tag_value))
             for tag_key, tag_value in tags.items():
                 client.set_registered_model_tag(model_name, tag_key, tag_value)
             logger.info("set_registered_model_tag")
