@@ -9,6 +9,9 @@ import time
 from schemes import *
 from mLFlowAPIs import *
 from mLFlowAPIs import app, MODEL_PORT_MAPPING
+# Before sending, add a debug log to print the serialized payload.
+import json
+
 
 from fastapi_utils.tasks import repeat_every
 # In-memory storage for subscriptions
@@ -25,6 +28,7 @@ def process_scheduled_notifications():
 
     global last_report_times
     current_time = datetime.datetime.utcnow()
+    logger.info("Starting scheduled notifications processing.")
 
     for sub_id, subscription in subscriptions.items():
         notif_uri = subscription.notifUri
@@ -44,7 +48,8 @@ def process_scheduled_notifications():
         event_notifs = []
         for event_sub in subscription.mLEventSubscs:
             event = event_sub.mLEvent
-            model_info = search_results.get(event)
+            logger.info(f"Searching for event {str(event)}")
+            model_info = search_results.get(str(event))
 
             if model_info and model_info["status"] in ["found", "registered"]:
                 model_url = model_info["mlflow_model_url"]
@@ -55,19 +60,26 @@ def process_scheduled_notifications():
                     mLFileAddr=MLModelAddr(mLModelUrl=model_url),
                     modelUniqueId=int(model_version)
                 ))
+                logger.info(f"filing the ML notifs")
 
         if not event_notifs:
             continue  # No new models to notify about
 
+        logger.info("making the notification payload")
         notification_payload = NwdafMLModelProvNotif(
             eventNotifs=event_notifs,
             subscriptionId=sub_id
         )
 
         try:
+            logger.info(f"try sending the notification to{notif_uri}")
+            payload_json = json.dumps(notification_payload.dict(), default=str)
+            logger.info("Serialized notification payload: %s", payload_json)
             response = requests.post(
-                notif_uri, json=notification_payload.dict(), timeout=5
+                notif_uri, json=payload_json,
+                headers={'Content-Type': 'application/json'}, timeout=5
             )
+            logger.info("received the res")
 
             if response.status_code == 200:
                 last_report_times[sub_id] = current_time

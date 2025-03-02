@@ -103,21 +103,6 @@ def register_existing_model(model_name: str) -> str:
     model_url = MLFLOW_SERVE_URI.format(assigned_port=assigned_port)
     return model_url
 
-# def generate_mlflow_tags(
-#     mLEvent: NwdafEvent,
-#     event_filter: Optional[Dict[str, Any]] = None,
-#     inference_data: Optional[Dict[str, Any]] = None,
-#     target_ue: Optional[Dict[str, Any]] = None,
-# ) -> Dict[str, str]:
-#     tags = {"mLEvent": str(mLEvent)}  # Add mLEvent as a tag
-#     if event_filter:
-#         if len(event_filter)!=0:
-#             tags.update(flatten_dict(event_filter, "eventFilter"))
-#     if inference_data:
-#         tags.update(flatten_dict(inference_data, "inferenceData"))
-#     if target_ue:
-#         tags.update(flatten_dict(target_ue, "targetUe"))
-#     return tags
 def download_model(model_url: str, model_name: str):
     logger.info("In the download_model")
     local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid4().hex}.pkl")
