@@ -30,9 +30,10 @@ logger = logging.getLogger(__name__)
 logger.info("Logging configured to output to stdout.")
 
 # ToDo (Update this based on k8s)
-MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
+MODEL_PORT_MAPPING: Dict[str, int] = {}
+MLFLOW_TRACKING_URI = "http://mlflow-svc.open5gs.svc.cluster.local:5000"
 MLFLOW_ARTIFACT_PATH = "/mlflow_artifacts"
-MLFLOW_SERVE_URI = "http://mlflow-svc:5001/models/{model_name}/versions/{model_version}/invocations"
+MLFLOW_SERVE_URI = "http://mlflow-svc.open5gs.svc.cluster.local:{assigned_port}/invocations"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 os.makedirs(MLFLOW_ARTIFACT_PATH, exist_ok=True)
 
@@ -48,20 +49,24 @@ class ModelLogRequest(BaseModel):
 
 
 def flatten_dict(d_in, parent_key='', sep='_'):
-
     items = []
     for k, v in d_in.items():
-        key_str = str(k)
+        key_str = str(k).replace("'", "")
         new_key = f"{parent_key}{sep}{key_str}" if parent_key else key_str
 
         if isinstance(v, dict):
             items.extend(flatten_dict(v, new_key, sep=sep).items())
         elif isinstance(v, list):
             sorted_list = sorted(v, key=lambda x: str(x))
-            items.append((new_key, str(sorted_list)))
+            list_str = str(sorted_list).replace("'", "")
+            items.append((new_key, list_str))
         else:
-            items.append((new_key, str(v)))
+            val_str = str(v)
+            cleaned_val = val_str.replace("'", "")
+            items.append((new_key, cleaned_val))
     return dict(items)
+
+
 
 def safe_flatten(param: Optional[Any], prefix: str) -> Dict[str, str]:
     if not param:
@@ -95,7 +100,7 @@ def register_existing_model(model_name: str) -> str:
         version=latest_version,
         stage="Production"
     )
-    model_url = MLFLOW_SERVE_URI.format(model_name=model_name, model_version=latest_version)
+    model_url = MLFLOW_SERVE_URI.format(assigned_port=assigned_port)
     return model_url
 
 # def generate_mlflow_tags(
@@ -113,7 +118,19 @@ def register_existing_model(model_name: str) -> str:
 #     if target_ue:
 #         tags.update(flatten_dict(target_ue, "targetUe"))
 #     return tags
-
+def download_model(model_url: str, model_name: str):
+    logger.info("In the download_model")
+    local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid4().hex}.pkl")
+    logger.info("os.path.join")
+    response = requests.get(model_url, stream=True)
+    logger.info("response = requests.get(model_url, stream=True)")
+    if response.status_code == 200:
+        with open(local_path, "wb") as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
+        return local_path
+    else:
+        raise HTTPException(status_code=400, detail="Failed to download model from URL")
 def generate_mlflow_tags(
     mLEvent: NwdafEvent,
     event_filter: Optional[Any] = None,
@@ -136,21 +153,6 @@ def generate_tags_for_model_log_request(request: ModelLogRequest) -> Dict[str, s
         inference_data=request.inference_data,
         target_ue=request.target_ue
     )
-
-
-def download_model(model_url: str, model_name: str):
-    logger.info("In the download_model")
-    local_path = os.path.join(MLFLOW_ARTIFACT_PATH, f"{model_name}_{uuid4().hex}.pkl")
-    logger.info("os.path.join")
-    response = requests.get(model_url, stream=True)
-    logger.info("response = requests.get(model_url, stream=True)")
-    if response.status_code == 200:
-        with open(local_path, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
-        return local_path
-    else:
-        raise HTTPException(status_code=400, detail="Failed to download model from URL")
 
 @app.post("/log_model/")
 async def log_ml_model(request: ModelLogRequest):
@@ -190,7 +192,7 @@ async def log_ml_model(request: ModelLogRequest):
                 logger.info("Tag key: %s (type: %s), Tag value: %s (type: %s)",
                 tag_key, type(tag_key), tag_value, type(tag_value))
             for tag_key, tag_value in tags.items():
-                client.set_registered_model_tag(model_name, tag_key, tag_value)
+                client.set_registered_model_tag(model_name, tag_key, tag_value.replace("'", ""))
             logger.info("set_registered_model_tag")
         
         time.sleep(5)
@@ -201,23 +203,33 @@ async def log_ml_model(request: ModelLogRequest):
             version=latest_version,
             stage="Production"
         )
+        for tag_key, tag_value in tags.items():
+            client.set_model_version_tag(name=model_name,version=latest_version,key=tag_key,value=tag_value.replace("'", ""))
+
+
         
-        # ★ Verify that the MLmodel file exists at the expected location.
+        # Verify that the MLmodel file exists at the expected location.
         # This should be at: /mlflow_artifacts/0/<run_id>/artifacts/models/<model_name>/MLmodel
         mlmodel_path = os.path.join(MLFLOW_ARTIFACT_PATH, "0", run_id, "artifacts", artifact_path, "MLmodel")
         if not os.path.exists(mlmodel_path):
-            raise HTTPException(status_code=500, detail=f"❌ MLmodel file missing at {mlmodel_path}")
+            raise HTTPException(status_code=500, detail=f"MLmodel file missing at {mlmodel_path}")
         
         # Serve the model using the standard serving URI (models:/{model_name}/{latest_version})
+        key = f"{model_name}_{latest_version}"
+        if key not in MODEL_PORT_MAPPING:
+            assigned_port = 5000 + len(MODEL_PORT_MAPPING) + 1
+            MODEL_PORT_MAPPING[key] = assigned_port
+        else:
+            assigned_port = MODEL_PORT_MAPPING[key]
         subprocess.Popen([
             "mlflow", "models", "serve",
             "--model-uri", f"models:/{model_name}/{latest_version}",
             "--host", "0.0.0.0",
-            "--port", "5001",
+            "--port", str(assigned_port),
             "--no-conda"
         ])
         
-        inference_url = MLFLOW_SERVE_URI.format(model_name=model_name, model_version=latest_version)
+        inference_url = model_url = MLFLOW_SERVE_URI.format(assigned_port=assigned_port)
         
         return {
             "message": f"✅ Model {model_name} logged, registered, and served successfully!",

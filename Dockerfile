@@ -7,6 +7,8 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     MLFLOW_TRACKING_URI=http://mlflow-svc:5000
 
+ENV MLFLOW_ENABLE_MULTI_MODEL_SERVER=true
+
 RUN apt-get update && apt-get install -y \
     git \
     nano \

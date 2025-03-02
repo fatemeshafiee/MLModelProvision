@@ -8,7 +8,7 @@ from uuid import uuid4
 import time
 from schemes import *
 from mLFlowAPIs import *
-from mLFlowAPIs import app
+from mLFlowAPIs import app, MODEL_PORT_MAPPING
 
 from fastapi_utils.tasks import repeat_every
 # In-memory storage for subscriptions
@@ -17,8 +17,8 @@ subscriptions: Dict[str, NwdafMLModelProvSubsc] = {}
 last_report_times: Dict[str, datetime.datetime] = {}
 
 API_ROOT = "http://localhost:8000"  # TODO: Change it for k8s.
-MLFLOW_TRACKING_URI = "http://mlflow-svc:5000"
-MLFLOW_SERVE_URI = "http://mlflow-svc:5000/models/{model_name}/versions/{model_version}/invocations"
+MLFLOW_TRACKING_URI = "http://mlflow-svc.open5gs.svc.cluster.local:5000"
+MLFLOW_SERVE_URI = "http://mlflow-svc.open5gs.svc.cluster.local:{assigned_port}/invocations"
 mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
 
 def process_scheduled_notifications():
@@ -71,17 +71,17 @@ def process_scheduled_notifications():
 
             if response.status_code == 200:
                 last_report_times[sub_id] = current_time
-                print(f"✅ Notification sent successfully to {notif_uri}")
+                logger.info(f"Notification sent successfully to {notif_uri}")
             else:
-                print(f"⚠️ Failed to send notification to {notif_uri}, Status Code: {response.status_code}")
+                logger.info(f"Failed to send notification to {notif_uri}, Status Code: {response.status_code}")
 
         except requests.RequestException as e:
-            print(f"❌ Error sending notification to {notif_uri}: {e}")
+            logger.info(f"Error sending notification to {notif_uri}: {e}")
 
 def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict[str, Any]:
     results = {}
     client = mlflow.tracking.MlflowClient()
-
+    count = 1
     for sub in event_subscriptions:
         tags = generate_mlflow_tags(
             mLEvent=sub.mLEvent,
@@ -89,12 +89,10 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
             inference_data=sub.inferDataForModel,
             target_ue=sub.tgtUe
         )
-
+        logger.info("The count is %d", count)
+        count += 1
         query_str = ""
         query_parts = []
-        for tag_key, tag_value in tags.items():
-            logger.info("Tag key: %s (type: %s), Tag value: %s (type: %s)",
-                tag_key, type(tag_key), tag_value, type(tag_value))
         for key, value in tags.items():
             if value is not None and str(value) != "None":
                 cleaned_value = str(value).replace("'", "")
@@ -106,52 +104,35 @@ def search_mlflow_models(event_subscriptions: List[MLEventSubscription]) -> Dict
             models = client.search_model_versions(query_str)
 
             if models:
+
+                logger.info("found the model")
                 latest_model = sorted(models, key=lambda m: int(m.version), reverse=True)[0]
+                key = f"{latest_model.name}_{latest_model.version}"
+                if key not in MODEL_PORT_MAPPING:
+                    assigned_port = 5000 + len(MODEL_PORT_MAPPING) + 1
+                    MODEL_PORT_MAPPING[key] = assigned_port
+                    subprocess.Popen([
+                            "mlflow", "models", "serve",
+                            "--model-uri", f"models:/{latest_model.name}/{latest_model.version}",
+                            "--host", "0.0.0.0",
+                            "--port", str(assigned_port),
+                            "--no-conda"
+                    ])
+                else:
+                    assigned_port = MODEL_PORT_MAPPING[key]
                 results[str(sub.mLEvent)] = {
                     "status": "found",
-                    "mlflow_model_url": MLFLOW_SERVE_URI.format(
-                        model_name=latest_model.name, model_version=latest_model.version
-                    ),
+                    "mlflow_model_url": f"http://mlflow-svc.open5gs.svc.cluster.local:{assigned_port}/invocations",
                     "model_version": latest_model.version
                 }
+
+
             else:
-                # No registered model found, check for logged models
-                runs = client.search_runs(experiment_ids=["0"], order_by=["start_time DESC"])
-                run_id = None
-
-                for run in runs:
-                    run_tags = run.data.tags
-                    if all(f"tag.{k}" in run_tags and run_tags[f"tag.{k}"] == v for k, v in tags.items()):
-                        run_id = run.info.run_id
-                        break
-
-                if run_id:
-                    model_uri = f"runs:/{run_id}/model"
-                    registered_model = mlflow.register_model(model_uri, str(sub.mLEvent))
-
-                    time.sleep(5)
-
-                    latest_version = client.get_latest_versions(str(sub.mLEvent), stages=["None"])[0].version
-
-                    client.transition_model_version_stage(
-                        name=str(sub.mLEvent),
-                        version=latest_version,
-                        stage="Production"
-                    )
-
-                    results[str(sub.mLEvent)] = {
-                        "status": "registered",
-                        "mlflow_model_url": MLFLOW_SERVE_URI.format(
-                            model_name=str(sub.mLEvent), model_version=latest_version
-                        ),
-                        "model_version": latest_version
-                    }
-                else:
-                    results[str(sub.mLEvent)] = {"status": "not_found"}
+                results[str(sub.mLEvent)] = {"status": "not_found"}
 
         except Exception as e:
-            print(f"MLflow query failed for event {sub.mLEvent}: {e}")
-            results[sub.mLEvent] = {"status": "error", "error_message": str(e)}
+            logger.info(f"MLflow query failed for event {sub.mLEvent}: {e}")
+            results[str(sub.mLEvent)] = {"status": "error", "error_message": str(e)}
 
     return results
 
@@ -168,7 +149,7 @@ async def subscribe(subscription: NwdafMLModelProvSubsc, response: Response):
     ml_event_notifs = []
 
     imm_rep_flag = subscription.eventReq.immRep if subscription.eventReq else False
-
+    logger.info("imm_rep_flag is %s", imm_rep_flag)
     search_results = search_mlflow_models(subscription.mLEventSubscs)
     logger.info("having the search_results")
 
@@ -181,6 +162,7 @@ async def subscribe(subscription: NwdafMLModelProvSubsc, response: Response):
             model_version = model_info["model_version"]
             logger.info("notif is created")
             if imm_rep_flag:
+                logger.info("the imm_rep_flag is true.")
                 ml_event_notifs.append(MLEventNotif(
                     event=event,
                     mLFileAddr=MLModelAddr(mLModelUrl=model_url),
