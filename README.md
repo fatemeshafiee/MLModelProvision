@@ -16,3 +16,9 @@ docker push <dockerhub-username>/<repo-name>:<tag>
 if using our [`open5gs-k8s-nwdaf`](https://github.com/fatemeshafiee/open5gs-k8s-nwdaf.git), `<dockerhub-username>/<repo-name>:<tag>` should be used as an image in the [`mlflow-deployment.yaml`] (https://github.com/fatemeshafiee/open5gs-k8s-nwdaf/blob/main/NWDAF/MLflow/mlflow-deployment.yaml) 
 
 Admin can store ML models and log, register, and serve them in MLflow to be available for ML Model Provision Service subscribers by exec-ing into the container and using MLflow directly. We also implemented an admin API that can receive the ML model from outside the container by providing the link that the model should be downloaded from, and the description of the ML model. An example of using this API is provided in `log_model_v2.sh`.
+
+
+
+These repositories provide the reference implementation and artifacts for the following paper. If you use this code or build on it, please cite:
+
+Fatemeh Shafiei Ardestani, Niloy Saha, Noura Limam, and Raouf Boutaba, “Towards NWDAF-enabled Analytics and Closed-Loop Automation in 5G Networks”, arXiv:2505.06789, 2025.
